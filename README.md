@@ -1,0 +1,2 @@
+# raspberrypisetisdr
+sdr adatgyujto
