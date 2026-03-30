@@ -3,172 +3,89 @@
 
 import os
 import shutil
-import json
-import logging
-from datetime import datetime
-from astropy.coordinates import SkyCoord, AltAz, EarthLocation, FK5, Galactic
-from astropy.time import Time
-import astropy.units as u
+import pandas as pd
+from skyfield.api import Topos, load
+from skyfield.data import hipparcos
+import numpy as np
 
 # ================== CONFIG ==================
 SOURCE_FOLDER = r"C:\pi_sdr\seti\data"
 DEST_FOLDER = r"C:\pi_sdr\seti\kep"
-LOG_FILE = r"C:\pi_sdr\seti\csvkoord.log"
+COORD_STEP = 5  # fokonkénti "kocka"
 
-# ANTENNA (RÖGZÍTETT!)
-ANT_AZ = 177
-ANT_EL = 77
-BEAM_WIDTH = 5
-
-# MEGFIGYELŐHELY (Erdőkertes, HU)
-LAT = 47.523
+# Antenna és hely
+ANT_AZ = 177      # fok
+ANT_EL = 77       # fok
+LAT = 47.523      # Erdőkertes
 LON = 19.325
-ELEV_M = 150
-
-# KOORDINÁTA BINNING
-COORD_STEP = 5
+ELEV_M = 150      # kb tengerszint feletti magasság
 
 # ============================================
 
-logging.basicConfig(
-    filename=LOG_FILE,
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+# Skyfield setup
+ts = load.timescale()
+t = ts.now()
+earth = load('de421.bsp')['earth']
+observer = earth + Topos(latitude_degrees=LAT, longitude_degrees=LON, elevation_m=ELEV_M)
 
-print("🔧 csvkoord.py - Galaktikus koordináta szerinti rendezés\n")
-logging.info("=== csvkoord.py start ===")
+# Átalakítás horizont -> égi koordináták (RA, Dec)
+from skyfield.positionlib import ICRF
+from skyfield.api import Angle
+from skyfield.api import Star
 
+def horizontal_to_icrf(az, el, observer, t):
+    from skyfield.api import Star
+    from skyfield.api import Topos
+    from skyfield.api import Angle
+    from skyfield.api import load
+    from skyfield import almanac
+    
+    # Skyfield az/el: az=0 É, el=0 horizont
+    alt = Angle(degrees=el)
+    azm = Angle(degrees=az)
+    astrometric = observer.at(t).from_altaz(alt, azm)
+    ra, dec, distance = astrometric.radec()
+    return ra, dec
+
+# Egyszerűsített: Skyfield-hez szükséges a Topos-ra váltás
+# Itt az antenna mutatási pontját konvertáljuk galaktikus koordinátává
+from astropy.coordinates import SkyCoord, AltAz, EarthLocation, FK5, Galactic
+from astropy.time import Time
+import astropy.units as u
+
+# Földrajzi hely
 loc = EarthLocation(lat=LAT*u.deg, lon=LON*u.deg, height=ELEV_M*u.m)
 
-def csv_filename_to_timestamp(filename):
-    """CSV fájlnévből kinyeri az időt: YYYYMMDD_HHMM.csv"""
-    try:
-        base = filename.replace(".csv", "")
-        date_part = base[:8]
-        time_part = base[9:13]
-        
-        year = int(date_part[:4])
-        month = int(date_part[4:6])
-        day = int(date_part[6:8])
-        hour = int(time_part[:2])
-        minute = int(time_part[2:4])
-        
-        dt = datetime(year, month, day, hour, minute, 0)
-        return dt
-    except Exception as e:
-        logging.error(f"Időfeldolgozás hiba '{filename}': {e}")
-        return None
+# Idő
+time = Time.now()
 
-def get_galactic_coords(dt):
-    """Adott időpontban a fix antenna irányából galaktikus koordináták"""
-    try:
-        t = Time(dt, scale='utc')
-        altaz = AltAz(
-            alt=ANT_EL*u.deg,
-            az=ANT_AZ*u.deg,
-            location=loc,
-            obstime=t
-        )
-        fk5 = SkyCoord(altaz.transform_to(FK5(equinox='J2000')))
-        gal = fk5.transform_to(Galactic)
-        return gal.l.deg, gal.b.deg
-    except Exception as e:
-        logging.error(f"Galaktikus koordináta hiba {dt}: {e}")
-        return None, None
+# AltAz koordináták az antenna irányából
+altaz = AltAz(alt=ANT_EL*u.deg, az=ANT_AZ*u.deg, location=loc, obstime=time)
 
+# FK5 (ICRS) koordináták
+fk5 = SkyCoord(altaz.transform_to(FK5(equinox='J2000')))
+
+# Galaktikus koordináták
+gal = fk5.transform_to(Galactic)
+l = gal.l.deg
+b = gal.b.deg
+
+# Mappa kiválasztása
 def get_folder_name(l, b):
-    """Galaktikus koordináták szerinti mappa név (5 fokos binning)"""
     l_bin = int(l // COORD_STEP * COORD_STEP)
     b_bin = int(b // COORD_STEP * COORD_STEP)
-    return f"l{l_bin:03d}_b{b_bin:+04d}"
+    return f"l{l_bin}_b{b_bin}"
 
-# ================ CSV FELDOLGOZÁSA ================
-print(f"📡 CSV fájlok feldolgozása: {SOURCE_FOLDER}\n")
+folder_name = get_folder_name(l, b)
+dest_path = os.path.join(DEST_FOLDER, folder_name)
+if not os.path.exists(dest_path):
+    os.makedirs(dest_path)
 
-csv_files = sorted([f for f in os.listdir(SOURCE_FOLDER) if f.endswith(".csv")])
-
-if not csv_files:
-    print("❌ Nincs CSV fájl!")
-    logging.warning("No CSV files found")
-    exit(1)
-
-print(f"Talált: {len(csv_files)} fájl\n")
-
-stats = {}
-copied_count = 0
-skipped_count = 0
-error_count = 0
-
+# CSV fájlok másolása
+csv_files = [f for f in os.listdir(SOURCE_FOLDER) if f.endswith(".csv")]
 for file in csv_files:
-    dt = csv_filename_to_timestamp(file)
-    if dt is None:
-        print(f"  ❌ {file} - nem értelmezhető filename")
-        error_count += 1
-        continue
-    
-    l_gal, b_gal = get_galactic_coords(dt)
-    if l_gal is None:
-        print(f"  ❌ {file} - koordináta hiba")
-        error_count += 1
-        continue
-    
-    folder_name = get_folder_name(l_gal, b_gal)
-    dest_path = os.path.join(DEST_FOLDER, folder_name)
-    
-    if not os.path.exists(dest_path):
-        os.makedirs(dest_path)
-        logging.info(f"New folder: {folder_name}")
-    
-    metadata_file = os.path.join(dest_path, "_info.json")
-    if not os.path.exists(metadata_file):
-        metadata = {
-            "antenna_az_deg": ANT_AZ,
-            "antenna_el_deg": ANT_EL,
-            "beam_width_deg": BEAM_WIDTH,
-            "galactic_l_deg": round(l_gal, 2),
-            "galactic_b_deg": round(b_gal, 2),
-            "observer_lat": LAT,
-            "observer_lon": LON,
-            "observer_elev_m": ELEV_M,
-            "first_observation": dt.isoformat(),
-            "file_count": 0
-        }
-        with open(metadata_file, "w") as f:
-            json.dump(metadata, f, indent=2)
-    
-    src_file = os.path.join(SOURCE_FOLDER, file)
-    dst_file = os.path.join(dest_path, file)
-    
-    if os.path.exists(dst_file):
-        print(f"  ⏭️  {file} → {folder_name}/ (már ott van)")
-        skipped_count += 1
-        logging.info(f"Skipped (exists): {file}")
-    else:
-        try:
-            shutil.copy2(src_file, dst_file)
-            print(f"  ✅ {file} → {folder_name}/ (l={l_gal:.1f}°, b={b_gal:.1f}°)")
-            copied_count += 1
-            logging.info(f"Copied: {file} → {folder_name}")
-            
-            if folder_name not in stats:
-                stats[folder_name] = {"count": 0}
-            stats[folder_name]["count"] += 1
-            
-        except Exception as e:
-            print(f"  ❌ {file} - másolás hiba: {e}")
-            error_count += 1
-            logging.error(f"Copy error {file}: {e}")
+    shutil.copy2(os.path.join(SOURCE_FOLDER, file), dest_path)
+    print(f"Copied {file} -> {dest_path}")
 
-# ================ ÖSSZEFOGLALÓ ================
-print("\n" + "="*70)
-print("✅ FELDOLGOZÁS KÉSZ")
-print("="*70)
-print(f"Másolva: {copied_count}")
-print(f"Átugrom (már ott): {skipped_count}")
-print(f"Hiba: {error_count}")
-print(f"\n📁 Koordináta mappák: {len(stats)}")
-for folder_name in sorted(stats.keys()):
-    print(f"  {folder_name}/: {stats[folder_name]['count']} fájl")
-print("="*70)
-logging.info("=== csvkoord.py end ===\n")
+print(f"Galaktikus koordináták: l={l:.2f}°, b={b:.2f}°")
+print(f"Fájlok mentve a {dest_path} mappába")
