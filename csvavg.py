@@ -13,8 +13,8 @@ OUTPUT_FOLDER = r"C:\seti\dataavg"
 LOG_FILE = os.path.join(OUTPUT_FOLDER, "csvavg.log")
 
 # Savitzky-Golay szűrés paraméterek
-WINDOW_LENGTH = 51  # Páratlan szám (51, 101, 151...)
-POLYORDER = 3       # Polinom rend (3-5 ajánlott)
+WINDOW_LENGTH = 51  # Páratlan szám (51, 101, 151...) nagyobb szám nagyobb simitás. 
+POLYORDER = 3       # Polinom rend (3-5 ajánlott) 1 egyenes 2 köbös,3 magasabb rendü
 
 # ==========================================
 
