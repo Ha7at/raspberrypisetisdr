@@ -7,7 +7,7 @@ import numpy as np
 import logging
 
 # ================== CONFIG ==================
-HYDROGEN_FOLDER = r"C:\pi_sdr\seti\hydrogen"
+HYDROGEN_FOLDER = r"C:\seti\hydrogen"
 BASELINE_FILE = os.path.join(HYDROGEN_FOLDER, "baseline.csv")
 LOG_FILE = os.path.join(HYDROGEN_FOLDER, "baseline_calc.log")
 
