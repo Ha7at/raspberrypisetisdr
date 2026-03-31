@@ -11,9 +11,9 @@ from astropy.time import Time
 import astropy.units as u
 
 # ================== CONFIG ==================
-SOURCE_FOLDER = r"C:\pi_sdr\seti\data"          # Ahol a hydrogen_logger készít CSV-ket
-DEST_FOLDER = r"C:\pi_sdr\seti\kep"             # Végcél (galaktikus koordináta mappa)
-LOG_FILE = r"C:\pi_sdr\seti\csvkoord.log"
+SOURCE_FOLDER = r"C:\seti\hydrogen"              # Ahol a hi.py készít CSV-ket
+DEST_FOLDER = r"C:\seti\mapdata"                 # Végcél (galaktikus koordináta mappa)
+LOG_FILE = r"C:\seti\csvkoord.log"
 
 # ANTENNA (RÖG ZÍTETT!)
 ANT_AZ = 177      # azimut (°, 0=É, 90=K, 180=D, 270=Ny)
