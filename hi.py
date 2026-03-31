@@ -13,8 +13,8 @@ import os
 CENTER_FREQ = 1420.4058e6   # Hydrogen line [Hz]
 SAMPLE_RATE = 2e6           # 2 MHz bandwidth
 GAIN_DB = 32               # Fixed gain
-FFT_BIN_HZ = 2000          # 10 kHz bin
-INTEGRATIONS = 24           # 8 Ă— 30 s
+FFT_BIN_HZ = 2000          # 2 kHz bin
+INTEGRATIONS = 24           # 24 x 10 s
 INTEGRATION_TIME = 10      # seconds
 OUTPUT_DIR = "/media/pi/ESD-USB/hydrogen"  # ĂLLĂŤTSD ĂT!
 # ============================================

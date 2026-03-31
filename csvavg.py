@@ -6,8 +6,8 @@ import pandas as pd
 import numpy as np
 
 # ================= CONFIG =================
-DATA_FOLDER = r"C:\pi_sdr\seti\data"
-OUTPUT_FILE = r"C:\pi_sdr\seti\dataavg\average_spectrum.csv"
+DATA_FOLDER = r"C:\seti\hydrogen"
+OUTPUT_FILE = r"C:\seti\dataavg\average_spectrum.csv"
 # ==========================================
 
 csv_files = [f for f in os.listdir(DATA_FOLDER) if f.endswith(".csv")]
