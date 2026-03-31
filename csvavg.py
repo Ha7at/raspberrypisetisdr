@@ -4,17 +4,19 @@
 import os
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 import logging
-from scipy.signal import savgol_filter
 
 # ================= CONFIG =================
-KEP_FOLDER = r"C:\pi_sdr\seti\kep"
-OUTPUT_FOLDER = r"C:\pi_sdr\seti\dataavg"
-LOG_FILE = os.path.join(OUTPUT_FOLDER, "csvavg.log")
+INPUT_FOLDER = r"C:\pi_sdr\seti\dataavg"
+BASELINE_FILE = r"C:\pi_sdr\seti\hydrogen\baseline.csv"
+OUTPUT_FOLDER = r"C:\pi_sdr\seti\kepk"
+LOG_FILE = os.path.join(OUTPUT_FOLDER, "dbkep.log")
 
-# Savitzky-Golay szűrés paraméterek
-WINDOW_LENGTH = 51  # Páratlan szám (51, 101, 151...)
-POLYORDER = 3       # Polinom rend (3-5 ajánlott)
+# Plot beállítások
+FIGSIZE = (14, 8)
+DPI = 100
+H_LINE_FREQ = 1420.405751768e6  # Hidrogénvonal Hz-ben
 
 # ==========================================
 
@@ -24,116 +26,146 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
-print("📊 csvavg.py - Koordinátánként átlagolás + Simítás\n")
-logging.info("=== csvavg.py start ===")
+print("🎨 dbkep.py - Spektrum rajzolás (simított + baseline korrigált)\n")
+logging.info("=== dbkep.py start ===")
 
 # Output mappa
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
-# Koordináta mappák keresése (l*_b*/)
-coord_folders = sorted([d for d in os.listdir(KEP_FOLDER) 
-                       if os.path.isdir(os.path.join(KEP_FOLDER, d)) 
-                       and d.startswith("l") and "_b" in d])
-
-if not coord_folders:
-    print("❌ Nincs l*_b* mappa!")
-    logging.error("No coordinate folders found")
+# Baseline beolvasása
+if not os.path.exists(BASELINE_FILE):
+    print(f"❌ Baseline fájl nem létezik: {BASELINE_FILE}")
+    logging.error(f"Baseline file not found: {BASELINE_FILE}")
     exit(1)
 
-print(f"Talált: {len(coord_folders)} koordináta mappa")
-print(f"Szűrés: Savitzky-Golay (window={WINDOW_LENGTH}, polyorder={POLYORDER})\n")
+baseline = pd.read_csv(BASELINE_FILE)
+print(f"✅ Baseline beolvasva: {len(baseline)} bin\n")
+logging.info(f"Baseline loaded: {len(baseline)} bins")
+
+# CSV fájlok keresése (dataavg/ mappából)
+csv_files = sorted([f for f in os.listdir(INPUT_FOLDER) 
+                   if f.startswith("avg_") and f.endswith(".csv")])
+
+if not csv_files:
+    print("❌ Nincs avg_*.csv fájl!")
+    logging.error("No avg CSV files found")
+    exit(1)
+
+print(f"Talált: {len(csv_files)} fájl\n")
 
 # Feldolgozás
 processed_count = 0
 error_count = 0
 
-for coord_folder in coord_folders:
-    coord_path = os.path.join(KEP_FOLDER, coord_folder)
-    
-    # CSV fájlok a mappában
-    csv_files = sorted([f for f in os.listdir(coord_path) 
-                       if f.endswith(".csv")])
-    
-    if not csv_files:
-        print(f"  ⚠️  {coord_folder} - nincs CSV")
-        logging.warning(f"No CSV files in {coord_folder}")
-        continue
+for file in csv_files:
+    input_path = os.path.join(INPUT_FOLDER, file)
     
     try:
-        df_list = []
+        # Beolvasás
+        df = pd.read_csv(input_path)
         
-        for file in csv_files:
-            file_path = os.path.join(coord_path, file)
-            try:
-                df = pd.read_csv(file_path)
-                
-                # Szükséges oszlopok
-                if "frequency_hz" in df.columns and "power_db" in df.columns:
-                    df = df[["frequency_hz", "power_db"]].copy()
-                    df_list.append(df)
-                else:
-                    logging.warning(f"Missing columns in {file}")
-            except Exception as e:
-                logging.error(f"Error reading {file}: {e}")
-        
-        if not df_list:
-            print(f"  ⚠️  {coord_folder} - nincs feldolgozható adat")
-            logging.warning(f"No processable data in {coord_folder}")
+        # Szükséges oszlopok
+        if "frequency_hz" not in df.columns or "power_db_smoothed" not in df.columns:
+            print(f"  ⚠️  {file} - hiányzó oszlopok")
+            logging.warning(f"Missing columns in {file}")
             continue
         
-        # Összefűzés
-        all_data = pd.concat(df_list, ignore_index=True)
+        # Koordináta név kinyerése
+        coord_name = file.replace("avg_", "").replace(".csv", "")
         
-        # ================= ÁTLAGOLÁS =================
-        avg_data = all_data.groupby("frequency_hz", as_index=False).agg({
-            'power_db': ['mean', 'std', 'min', 'max', 'count']
-        }).reset_index(drop=True)
+        # =============== BASELINE LEVONÁS ===============
+        # Merge baseline (frequency_hz alapján)
+        df_merged = pd.merge(
+            df,
+            baseline[["frequency_hz", "baseline_db"]],
+            on="frequency_hz",
+            how="left"
+        )
         
-        # Oszlopnevek
-        avg_data.columns = ['frequency_hz', 'power_db_avg', 'power_db_std', 
-                           'power_db_min', 'power_db_max', 'measurement_count']
+        # Baseline levonás
+        df_merged["power_db_corrected"] = df_merged["power_db_smoothed"] - df_merged["baseline_db"]
         
-        # ================= SIMÍTÁS (Savitzky-Golay) =================
-        # Szűrés csak akkor, ha van elég pont
-        if len(avg_data) >= WINDOW_LENGTH:
-            avg_data['power_db_smoothed'] = savgol_filter(
-                avg_data['power_db_avg'].values,
-                window_length=WINDOW_LENGTH,
-                polyorder=POLYORDER
-            )
-        else:
-            # Ha túl kevés pont: eredeti átlag
-            avg_data['power_db_smoothed'] = avg_data['power_db_avg'].values
-            logging.warning(f"{coord_folder}: Kevés pont ({len(avg_data)}), simítás kihagyva")
+        # =============== PLOT ===============
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=FIGSIZE, dpi=DPI)
         
-        # ============================================
+        # X tengely: Frekvencia (MHz-ben)
+        freq_mhz = df_merged["frequency_hz"].values / 1e6
+        power_db_smoothed = df_merged["power_db_smoothed"].values
+        power_db_corrected = df_merged["power_db_corrected"].values
         
-        # Időbélyeg hozzáadása
-        avg_data.insert(0, "timestamp_utc", pd.Timestamp.utcnow().isoformat())
+        # ========== PLOT 1: Simított (eredeti) ==========
+        ax1.plot(freq_mhz, power_db_smoothed, color='blue', linewidth=1.5, 
+                label='Simított spektrum')
+        ax1.axvline(H_LINE_FREQ / 1e6, color='red', linestyle='--', linewidth=2, 
+                   label=f'H-vonal ({H_LINE_FREQ/1e6:.2f} MHz)', alpha=0.7)
         
-        # Output filename
-        output_file = f"avg_{coord_folder}.csv"
-        output_path = os.path.join(OUTPUT_FOLDER, output_file)
+        # Baseline rajzolása
+        baseline_plot = pd.merge(
+            df_merged[["frequency_hz"]],
+            baseline[["frequency_hz", "baseline_db"]],
+            on="frequency_hz",
+            how="left"
+        )
+        ax1.plot(baseline_plot["frequency_hz"].values / 1e6, 
+                baseline_plot["baseline_db"].values, 
+                color='green', linewidth=1.5, linestyle=':', label='Baseline (zajszint)')
+        
+        # Statisztika 1
+        max_power_1 = power_db_smoothed.max()
+        max_freq_1 = freq_mhz[power_db_smoothed.argmax()]
+        mean_power_1 = power_db_smoothed.mean()
+        
+        ax1.set_title(f'{coord_name} - Simított\nMax: {max_power_1:.2f} dB @ {max_freq_1:.2f} MHz | Mean: {mean_power_1:.2f} dB',
+                    fontsize=12, fontweight='bold')
+        ax1.set_ylabel('Teljesítmény (dB)', fontsize=11)
+        ax1.grid(True, alpha=0.3)
+        ax1.legend(loc='best', fontsize=10)
+        
+        # ========== PLOT 2: Baseline-korrigált ==========
+        ax2.plot(freq_mhz, power_db_corrected, color='darkblue', linewidth=1.5, 
+                label='Baseline-korrigált')
+        ax2.axvline(H_LINE_FREQ / 1e6, color='red', linestyle='--', linewidth=2, 
+                   label=f'H-vonal ({H_LINE_FREQ/1e6:.2f} MHz)', alpha=0.7)
+        ax2.axhline(0, color='gray', linestyle='-', linewidth=0.5, alpha=0.5)
+        
+        # Statisztika 2
+        max_power_2 = power_db_corrected.max()
+        max_freq_2 = freq_mhz[power_db_corrected.argmax()]
+        mean_power_2 = power_db_corrected.mean()
+        
+        ax2.set_title(f'{coord_name} - Baseline-korrigált\nMax: {max_power_2:.2f} dB @ {max_freq_2:.2f} MHz | Mean: {mean_power_2:.2f} dB',
+                    fontsize=12, fontweight='bold')
+        ax2.set_xlabel('Frekvencia (MHz)', fontsize=11)
+        ax2.set_ylabel('Teljesítmény (dB)', fontsize=11)
+        ax2.grid(True, alpha=0.3)
+        ax2.legend(loc='best', fontsize=10)
+        
+        # Layout
+        plt.tight_layout()
         
         # Mentés
-        avg_data.to_csv(output_path, index=False)
+        output_file = f"{coord_name}_baseline_corrected.png"
+        output_path = os.path.join(OUTPUT_FOLDER, output_file)
+        plt.savefig(output_path, dpi=DPI)
+        plt.close()
         
-        print(f"  ✅ {coord_folder}")
+        print(f"  ✅ {coord_name}")
         print(f"      → {output_file}")
-        print(f"      Fájlok: {len(csv_files)}, Pontok: {len(avg_data)}")
+        print(f"      Simított:        Max: {max_power_1:.2f} dB")
+        print(f"      Korrigált:       Max: {max_power_2:.2f} dB")
         
         processed_count += 1
-        logging.info(f"Processed: {coord_folder} ({len(csv_files)} files, {len(avg_data)} bins, smoothed)")
+        logging.info(f"Plotted: {coord_name} - Original Max: {max_power_1:.2f} dB, Corrected Max: {max_power_2:.2f} dB")
         
     except Exception as e:
-        print(f"  ❌ {coord_folder} - Hiba: {e}")
-        logging.error(f"Error processing {coord_folder}: {e}")
+        print(f"  ❌ {file} - Hiba: {e}")
+        logging.error(f"Error processing {file}: {e}")
         error_count += 1
 
 print("\n" + "="*70)
-print("✅ ÁTLAGOLÁS + SIMÍTÁS KÉSZ")
+print("✅ RAJZOLÁS KÉSZ (2 subplot / kép)")
 print("="*70)
 print(f"Feldolgozva: {processed_count}")
 print(f"Hiba: {error_count}")
 print(f"Output mappa: {OUTPUT_FOLDER}")
-logging.info(f"=== csvavg.py end === Processed: {processed_count}, Errors: {error_count}\n")
+logging.info(f"=== dbkep.py end === Processed: {processed_count}, Errors: {error_count}\n")
