@@ -1,4 +1,4 @@
-hydrogen_logger_clean.py
+# -*- coding: utf-8 -*-
 #!/usr/bin/env python3
 
 import SoapySDR
@@ -12,14 +12,14 @@ import os
 # ================== CONFIG ==================
 CENTER_FREQ = 1420.4058e6   # Hydrogen line [Hz]
 SAMPLE_RATE = 2e6           # 2 MHz bandwidth
-GAIN_DB = 40                # Fixed gain
-FFT_BIN_HZ = 10e3           # 10 kHz bin
-INTEGRATIONS = 8            # 8 × 30 s
-INTEGRATION_TIME = 30       # seconds
-OUTPUT_DIR = "/media/pi/KINGSTON/hydrogen"  # ÁLLÍTSD ÁT!
+GAIN_DB = 32               # Fixed gain
+FFT_BIN_HZ = 2000          # 10 kHz bin
+INTEGRATIONS = 24           # 8 Ă— 30 s
+INTEGRATION_TIME = 10      # seconds
+OUTPUT_DIR = "/media/pi/ESD-USB/hydrogen"  # ĂLLĂŤTSD ĂT!
 # ============================================
 
-# Könyvtár létrehozása ha nincs
+# KĂ¶nyvtĂˇr lĂ©trehozĂˇsa ha nincs
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 print("Initializing SDRplay RSP1A...")
@@ -38,7 +38,7 @@ sdr.activateStream(rxStream)
 
 print("SDR initialized, starting H-line logging...")
 
-# FFT paraméterek
+# FFT paramĂ©terek
 fft_size = int(SAMPLE_RATE / FFT_BIN_HZ)
 
 while True:
@@ -47,7 +47,7 @@ while True:
 
     print(f"Recording: {filename}")
 
-    # spektrum gyűjtés
+    # spektrum gyĂ»jtĂ©s
     spectrum_accum = np.zeros(fft_size)
 
     for i in range(INTEGRATIONS):
@@ -73,7 +73,7 @@ while True:
 
         spectrum_accum += power
 
-    # átlag
+    # Ăˇtlag
     spectrum_avg = spectrum_accum / INTEGRATIONS
 
     # frekvencia tengely
@@ -83,7 +83,7 @@ while True:
         fft_size
     )
 
-    # CSV mentés
+    # CSV mentĂ©s
     with open(filename, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["timestamp_utc", "frequency_hz", "power_db"])
@@ -93,6 +93,6 @@ while True:
 
     print("Saved:", filename)
 
-# cleanup (nem fut le végtelen ciklus miatt)
+# cleanup (nem fut le vĂ©gtelen ciklus miatt)
 sdr.deactivateStream(rxStream)
 sdr.closeStream(rxStream)
