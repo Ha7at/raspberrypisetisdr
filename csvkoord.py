@@ -11,8 +11,8 @@ from astropy.time import Time
 import astropy.units as u
 
 # ================== CONFIG ==================
-SOURCE_FOLDER = r"C:seti\hydrogen"          # Ahol a hydrogen_logger készít CSV-ket
-DEST_FOLDER = r"C:seti\mapdata"             # Végcél (galaktikus koordináta mappa)
+SOURCE_FOLDER = r"C:\seti\hydrogen"          # Ahol a hydrogen_logger készít CSV-ket
+DEST_FOLDER = r"C:\seti\mapdata"             # Végcél (galaktikus koordináta mappa)
 LOG_FILE = r"C:\seti\csvkoord.log"
 
 # ANTENNA (RÖG ZÍTETT!)
