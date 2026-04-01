@@ -20,7 +20,12 @@ for fname in files:
     path = os.path.join(DATA_DIR, fname)
 
     # idő a fájlnévből (YYYYMMDD_HHMM)
-    t = datetime.strptime(fname.replace(".csv", ""), "%Y%m%d_%H%M")
+    try:
+        t = datetime.strptime(fname.replace(".csv", ""), "%Y%m%d_%H%M")
+    except ValueError:
+        print(f"Skipping file with unexpected format: {fname}")
+        continue
+    
     all_times.append(t)
 
     df = pd.read_csv(path)
@@ -28,7 +33,11 @@ for fname in files:
     if all_freqs is None:
         all_freqs = df["frequency_hz"].values
 
-    all_power.append(df["power_db"].values)
+    # Szűrés: csak -40 dB feletti értékek
+    power_filtered = df["power_db"].values.copy()
+    power_filtered[power_filtered < -40] = np.nan
+    
+    all_power.append(power_filtered)
 
 all_power = np.array(all_power)
 
@@ -55,9 +64,8 @@ surf = ax.plot_surface(
 ax.set_xlabel("Frekvencia [Hz]")
 ax.set_ylabel("Idő [perc]")
 ax.set_zlabel("Teljesítmény [dB]")
-ax.set_title("3D SETI spektrum (SoapyPower, 4 perces minták)")
+ax.set_title("3D SETI spektrum (SoapyPower, 4 perces minták) - csak -40 dB feletti")
 
 fig.colorbar(surf, shrink=0.5, aspect=10, label="dB")
 plt.tight_layout()
 plt.show()
-
