@@ -1,0 +1,9 @@
+{
+  "antenna_az_deg_nominal": 177.0,
+  "antenna_el_deg_nominal": 81.0,
+  "software_az_offset_deg": -1.5,
+  "beam_width_deg": 4,
+  "center_ra_deg": 280.24,
+  "center_dec_deg": 38.5,
+  "coordinate_system": "Equatorial (RA/DEC) - SIDEREAL TIME COMPENSATED"
+}
